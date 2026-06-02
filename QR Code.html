@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Birthday Album — QR Code</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Baloo+2:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  :root { --accent: #EC4899; --ink: #2A2140; }
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    background:
+      radial-gradient(900px 600px at 15% -5%, #f3ecff 0%, transparent 55%),
+      radial-gradient(900px 600px at 100% 105%, #ffe9f2 0%, transparent 55%),
+      #ecebf2;
+    min-height: 100vh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 30px 16px 60px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Confetti dots in the page bg ── */
+  .bg-dot { position: fixed; border-radius: 2px; opacity: 0.7; z-index: 0; }
+
+  /* ── The card / table tent ── */
+  .card {
+    position: relative; z-index: 2;
+    width: 380px; max-width: 100%;
+    background: #fff; border-radius: 30px;
+    padding: 38px 34px 34px;
+    box-shadow: 0 30px 70px rgba(42,33,64,0.18), 0 2px 0 rgba(0,0,0,0.02);
+    text-align: center;
+    border: 3px solid #fff;
+    overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 10px;
+    background: linear-gradient(90deg,#7C3AED,#EC4899,#FB7185,#F59E0B,#22C55E,#38BDF8);
+  }
+  .eyebrow {
+    font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 13px;
+    letter-spacing: 2.5px; text-transform: uppercase; color: var(--accent);
+    margin: 8px 0 6px;
+  }
+  .title {
+    font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 34px;
+    line-height: 1.05; color: var(--ink); margin: 0 0 6px; text-wrap: balance;
+  }
+  .sub { font-size: 15px; color: #6B6480; line-height: 1.45; margin: 0 0 24px; }
+
+  .qr-frame {
+    display: inline-block; padding: 18px; border-radius: 22px;
+    background: #FBFAFE; box-shadow: inset 0 0 0 2px #EFEBF7;
+    margin-bottom: 22px;
+  }
+  #qr svg { display: block; }
+
+  .steps { display: flex; flex-direction: column; gap: 11px; margin: 4px 0 22px; text-align: left; }
+  .step { display: flex; align-items: center; gap: 12px; }
+  .step .n {
+    width: 27px; height: 27px; border-radius: 50%; flex-shrink: 0;
+    background: var(--accent); color: #fff; font-family: 'Baloo 2', sans-serif;
+    font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center;
+  }
+  .step .txt { font-size: 14.5px; color: #4A4360; font-weight: 500; }
+
+  .code-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: ui-monospace, Menlo, monospace; font-size: 14px; color: var(--ink);
+    background: #F4F0FB; padding: 8px 16px; border-radius: 30px; font-weight: 600;
+    letter-spacing: 1px;
+  }
+
+  /* ── Controls (screen only) ── */
+  .controls {
+    position: relative; z-index: 2;
+    width: 380px; max-width: 100%; margin-top: 22px;
+    background: rgba(255,255,255,0.7); backdrop-filter: blur(8px);
+    border-radius: 20px; padding: 18px; box-shadow: 0 8px 24px rgba(42,33,64,0.08);
+  }
+  .controls label { display: block; font-size: 12.5px; font-weight: 700; color: #8A839C; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .controls input {
+    width: 100%; padding: 12px 14px; border-radius: 12px; font-size: 14.5px;
+    border: 2px solid #E7E2F0; outline: none; color: var(--ink); font-family: inherit;
+  }
+  .controls input:focus { border-color: var(--accent); }
+  .row { display: flex; gap: 10px; margin-top: 12px; }
+  .btn {
+    flex: 1; padding: 13px; border-radius: 12px; border: none; cursor: pointer;
+    font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 15px;
+    background: var(--accent); color: #fff; transition: transform 0.12s, filter 0.2s;
+  }
+  .btn.ghost { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 2px #E7E2F0; }
+  .btn:active { transform: scale(0.97); }
+  .swatches { display: flex; gap: 8px; margin-top: 12px; }
+  .sw { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 3px solid #fff; box-shadow: 0 0 0 1.5px #e2dcee; }
+  .sw.active { box-shadow: 0 0 0 2.5px var(--ink); }
+  .hint { font-size: 12px; color: #9A93AC; margin-top: 12px; line-height: 1.4; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .controls, .no-print { display: none !important; }
+    .bg-dot { display: none; }
+    .card { box-shadow: none; border: 2px solid #eee; margin-top: 30px; }
+    @page { margin: 16mm; }
+  }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="eyebrow" id="eyebrow">Scan to join</div>
+    <h1 class="title" id="cardTitle">Add your photos!</h1>
+    <p class="sub" id="cardSub">Point your phone camera at the code below to drop your party pics into our shared album.</p>
+
+    <div class="qr-frame"><div id="qr"></div></div>
+
+    <div class="steps">
+      <div class="step"><div class="n">1</div><div class="txt">Open your camera &amp; point it at the code</div></div>
+      <div class="step"><div class="n">2</div><div class="txt">Tap the link that pops up</div></div>
+      <div class="step"><div class="n">3</div><div class="txt">Add your name &amp; upload away 🎉</div></div>
+    </div>
+
+    <div class="code-pill" id="codePill">birthdayalbum.app</div>
+  </div>
+
+  <div class="controls no-print">
+    <label for="urlInput">Album link (what the QR opens)</label>
+    <input id="urlInput" type="text" value="https://birthdayalbum.app/maya" placeholder="https://…" />
+    <div class="swatches" id="swatches"></div>
+    <div class="row">
+      <button class="btn ghost" id="resetBtn">Reset</button>
+      <button class="btn" id="printBtn">Print / Save PDF</button>
+    </div>
+    <p class="hint">This is a demo link. Swap in your real album URL (e.g. a hosted version of the app) and the QR updates instantly. Then print this card for the party table.</p>
+  </div>
+
+  <script>
+    const ACCENTS = ['#EC4899', '#7C3AED', '#FB7185', '#F59E0B', '#22C55E', '#38BDF8'];
+    let accent = '#EC4899';
+
+    // ── scatter festive confetti dots in the page background ──
+    (function () {
+      const colors = ['#7C3AED', '#EC4899', '#FB7185', '#F59E0B', '#22C55E', '#38BDF8'];
+      for (let i = 0; i < 26; i++) {
+        const d = document.createElement('div');
+        d.className = 'bg-dot';
+        const s = 6 + Math.random() * 10;
+        d.style.width = s + 'px';
+        d.style.height = (Math.random() > 0.5 ? s : s * 0.5) + 'px';
+        d.style.borderRadius = Math.random() > 0.5 ? '50%' : '2px';
+        d.style.left = Math.random() * 100 + 'vw';
+        d.style.top = Math.random() * 100 + 'vh';
+        d.style.background = colors[i % colors.length];
+        d.style.transform = `rotate(${Math.random() * 360}deg)`;
+        document.body.appendChild(d);
+      }
+    })();
+
+    // ── render a stylish QR (rounded modules + colored finder eyes) ──
+    function renderQR(text) {
+      const qr = qrcode(0, 'H');     // high error correction → tolerates styling
+      qr.addData(text || ' ');
+      qr.make();
+      const count = qr.getModuleCount();
+      const cell = 8.6;
+      const size = count * cell;
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.setAttribute('width', size);
+      svg.setAttribute('height', size);
+      svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+
+      const inFinder = (r, c) => {
+        const f = (R, C) => R < 7 && C < 7;
+        return f(r, c) || f(r, count - 1 - c) || f(count - 1 - r, c);
+      };
+
+      // data modules as rounded dots
+      for (let r = 0; r < count; r++) {
+        for (let c = 0; c < count; c++) {
+          if (!qr.isDark(r, c) || inFinder(r, c)) continue;
+          const rect = document.createElementNS(ns, 'rect');
+          rect.setAttribute('x', c * cell + cell * 0.12);
+          rect.setAttribute('y', r * cell + cell * 0.12);
+          rect.setAttribute('width', cell * 0.76);
+          rect.setAttribute('height', cell * 0.76);
+          rect.setAttribute('rx', cell * 0.28);
+          rect.setAttribute('fill', '#2A2140');
+          svg.appendChild(rect);
+        }
+      }
+
+      // three finder eyes (rounded), colored in accent
+      const eye = (R, C) => {
+        const x = C * cell, y = R * cell, s = 7 * cell;
+        const outer = document.createElementNS(ns, 'rect');
+        outer.setAttribute('x', x + cell * 0.4); outer.setAttribute('y', y + cell * 0.4);
+        outer.setAttribute('width', s - cell * 0.8); outer.setAttribute('height', s - cell * 0.8);
+        outer.setAttribute('rx', cell * 2); outer.setAttribute('fill', 'none');
+        outer.setAttribute('stroke', accent); outer.setAttribute('stroke-width', cell * 1.05);
+        svg.appendChild(outer);
+        const inner = document.createElementNS(ns, 'rect');
+        inner.setAttribute('x', x + cell * 2.3); inner.setAttribute('y', y + cell * 2.3);
+        inner.setAttribute('width', cell * 2.4); inner.setAttribute('height', cell * 2.4);
+        inner.setAttribute('rx', cell * 0.9); inner.setAttribute('fill', accent);
+        svg.appendChild(inner);
+      };
+      eye(0, 0); eye(0, count - 7); eye(count - 7, 0);
+
+      const holder = document.getElementById('qr');
+      holder.innerHTML = '';
+      holder.appendChild(svg);
+    }
+
+    // ── swatches ──
+    const swWrap = document.getElementById('swatches');
+    ACCENTS.forEach(col => {
+      const s = document.createElement('div');
+      s.className = 'sw' + (col === accent ? ' active' : '');
+      s.style.background = col;
+      s.onclick = () => {
+        accent = col;
+        document.documentElement.style.setProperty('--accent', col);
+        [...swWrap.children].forEach(c => c.classList.remove('active'));
+        s.classList.add('active');
+        renderQR(document.getElementById('urlInput').value);
+      };
+      swWrap.appendChild(s);
+    });
+
+    // ── wire inputs ──
+    const urlInput = document.getElementById('urlInput');
+    const codePill = document.getElementById('codePill');
+    function update() {
+      const v = urlInput.value.trim();
+      renderQR(v);
+      try { codePill.textContent = new URL(v).host + new URL(v).pathname.replace(/\/$/, ''); }
+      catch { codePill.textContent = v || 'birthdayalbum.app'; }
+    }
+    urlInput.addEventListener('input', update);
+    document.getElementById('printBtn').onclick = () => window.print();
+    document.getElementById('resetBtn').onclick = () => { urlInput.value = 'https://birthdayalbum.app/maya'; update(); };
+
+    update();
+  </script>
+</body>
+</html>

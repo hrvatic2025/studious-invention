@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PartyPix — Live Slideshow</title>
+<meta name="theme-color" content="#0E0A1A" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --accent: #EC4899; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    background: radial-gradient(1400px 900px at 50% 30%, #1c1430 0%, #0E0A1A 70%);
+    color: #fff; overflow: hidden; height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage { position: fixed; inset: 0; }
+  .layer {
+    position: absolute; inset: 0; background-size: cover; background-position: center;
+    opacity: 0; transition: opacity 1.1s ease; will-change: opacity, transform;
+  }
+  .layer.show { opacity: 1; animation: kenburns 7s ease-out forwards; }
+  @keyframes kenburns { from { transform: scale(1.03); } to { transform: scale(1.11); } }
+
+  /* vignette + top/bottom scrims for legibility */
+  .scrim { position: fixed; inset: 0; pointer-events: none;
+    background:
+      linear-gradient(to bottom, rgba(14,10,26,0.55) 0%, transparent 22%, transparent 62%, rgba(14,10,26,0.82) 100%);
+  }
+
+  .topbar { position: fixed; top: 0; left: 0; right: 0; padding: 34px 44px; display: flex; align-items: center; justify-content: space-between; z-index: 5; }
+  .ttl { display: flex; align-items: center; gap: 16px; }
+  .ttl h1 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: clamp(26px, 3.4vw, 50px); line-height: 1; text-shadow: 0 2px 24px rgba(0,0,0,0.5); }
+  .live { display: inline-flex; align-items: center; gap: 9px; font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 15px; letter-spacing: 1.5px; text-transform: uppercase; background: rgba(255,255,255,0.12); backdrop-filter: blur(8px); padding: 9px 16px; border-radius: 40px; }
+  .live .dot { width: 11px; height: 11px; border-radius: 50%; background: #FF4D67; box-shadow: 0 0 0 0 rgba(255,77,103,0.7); animation: ping 1.6s ease-out infinite; }
+  @keyframes ping { 0% { box-shadow: 0 0 0 0 rgba(255,77,103,0.6); } 70% { box-shadow: 0 0 0 12px rgba(255,77,103,0); } 100% { box-shadow: 0 0 0 0 rgba(255,77,103,0); } }
+  .count { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: clamp(16px, 1.6vw, 22px); opacity: 0.9; }
+  .count b { color: var(--accent); }
+
+  .caption { position: fixed; left: 44px; bottom: 40px; z-index: 5; max-width: 60%; }
+  .caption .by { display: inline-flex; align-items: center; gap: 12px; }
+  .caption .av { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 23px; color: #fff; box-shadow: 0 4px 16px rgba(0,0,0,0.35); }
+  .caption .nm { font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: clamp(20px, 2.2vw, 32px); text-shadow: 0 2px 16px rgba(0,0,0,0.6); }
+  .caption .cap { font-size: clamp(16px, 1.7vw, 24px); margin-top: 10px; opacity: 0.95; text-shadow: 0 2px 16px rgba(0,0,0,0.6); line-height: 1.35; }
+
+  .join { position: fixed; right: 40px; bottom: 38px; z-index: 5; display: flex; align-items: center; gap: 18px; background: rgba(255,255,255,0.94); color: #2A2140; padding: 16px 20px 16px 16px; border-radius: 22px; box-shadow: 0 18px 50px rgba(0,0,0,0.4); }
+  .join .qr { width: 104px; height: 104px; border-radius: 12px; overflow: hidden; background: #fff; display: flex; align-items: center; justify-content: center; }
+  .join .qr svg { width: 100%; height: 100%; display: block; }
+  .join .jt { max-width: 200px; }
+  .join .jt .h { font-family: 'Baloo 2', sans-serif; font-weight: 800; font-size: 18px; line-height: 1.1; }
+  .join .jt .s { font-size: 13.5px; color: #6B6480; margin-top: 5px; line-height: 1.35; }
+  .join .jt .u { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent); margin-top: 7px; font-weight: 600; }
+
+  /* "just added" toast */
+  .newtoast { position: fixed; top: 104px; left: 50%; transform: translateX(-50%) translateY(-20px); z-index: 8;
+    background: var(--accent); color: #fff; font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 19px;
+    padding: 13px 26px; border-radius: 40px; box-shadow: 0 14px 40px rgba(0,0,0,0.4); opacity: 0; transition: opacity .4s, transform .4s; }
+  .newtoast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* empty state */
+  .empty { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; z-index: 6; padding: 40px; }
+  .empty.hidden { display: none; }
+  .empty h2 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: clamp(30px, 4vw, 56px); margin-bottom: 14px; }
+  .empty p { font-size: clamp(16px, 1.8vw, 24px); opacity: 0.8; margin-bottom: 30px; }
+  .empty .qr { width: 220px; height: 220px; background: #fff; border-radius: 20px; padding: 14px; }
+  .empty .qr svg { width: 100%; height: 100%; display: block; }
+  .empty .u { font-family: ui-monospace, monospace; margin-top: 18px; font-size: 16px; color: var(--accent); }
+  .demo-tag { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 9; font-size: 12px; background: rgba(255,255,255,0.14); padding: 5px 12px; border-radius: 20px; letter-spacing: .5px; }
+  .demo-tag.hidden { display: none; }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="layer" id="layA"></div>
+    <div class="layer" id="layB"></div>
+  </div>
+  <div class="scrim"></div>
+
+  <div class="demo-tag hidden" id="demoTag">DEMO — connect the backend for live photos</div>
+
+  <div class="topbar">
+    <div class="ttl">
+      <h1 id="ttl">The Album</h1>
+    </div>
+    <div style="display:flex; align-items:center; gap:18px;">
+      <div class="count"><b id="cPhotos">0</b> photos · <b id="cGuests">0</b> guests</div>
+      <div class="live"><span class="dot"></span> Live</div>
+    </div>
+  </div>
+
+  <div class="caption" id="caption" style="opacity:0; transition:opacity .6s;">
+    <div class="by"><div class="av" id="capAv">?</div><div class="nm" id="capNm">Guest</div></div>
+    <div class="cap" id="capTxt"></div>
+  </div>
+
+  <div class="join" id="join">
+    <div class="qr" id="joinQr"></div>
+    <div class="jt">
+      <div class="h">Join the album</div>
+      <div class="s">Scan to add your photos to the big screen</div>
+      <div class="u" id="joinUrl"></div>
+    </div>
+  </div>
+
+  <div class="newtoast" id="newtoast">📸 New photo!</div>
+
+  <div class="empty hidden" id="empty">
+    <h2 id="emptyTtl">Waiting for the first photo… 🎈</h2>
+    <p>Scan the code to add yours — it'll appear right here.</p>
+    <div class="qr" id="emptyQr"></div>
+    <div class="u" id="emptyUrl"></div>
+  </div>
+
+  <script>
+  (function () {
+    const ACCENTS = ['#7C3AED','#EC4899','#FB7185','#F59E0B','#22C55E','#38BDF8','#FACC15'];
+    const $ = id => document.getElementById(id);
+    const params = new URLSearchParams(location.search);
+    const EVENT_ID = params.get('e');
+    let LIVE = false, photos = [], idx = -1, seen = new Set(), curLayer = 'layA';
+    let accent = '#EC4899';
+
+    const DEMO = [
+      { id:'s1', uploader:'Priya',  caption:'The cake reveal 🎂',      hue:'linear-gradient(135deg,#FDE68A,#FB923C)' },
+      { id:'s2', uploader:'Marcus', caption:'Squad before the candles', hue:'linear-gradient(135deg,#C4B5FD,#7C3AED)' },
+      { id:'s3', uploader:'Lena',   caption:'',                         hue:'linear-gradient(135deg,#A7F3D0,#10B981)' },
+      { id:'s4', uploader:'Tom',    caption:'Dance floor chaos',        hue:'linear-gradient(135deg,#FBCFE8,#EC4899)' },
+    ];
+
+    function setAccent(c){ accent=c; document.documentElement.style.setProperty('--accent', c); }
+    function initials(n){ return (n||'?').trim().slice(0,1).toUpperCase(); }
+    function avColor(n){ return ACCENTS[(n||'x').charCodeAt(0) % ACCENTS.length]; }
+
+    async function api(p){ const r = await fetch('/api'+p); if(!r.ok) throw new Error('http'); return r.json(); }
+
+    function buildQR(text){
+      const qr = qrcode(0,'M'); qr.addData(text||' '); qr.make();
+      const n = qr.getModuleCount(), cell = 6, size = n*cell, ns='http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns,'svg');
+      svg.setAttribute('viewBox', `0 0 ${size} ${size}`);
+      const bg = document.createElementNS(ns,'rect'); bg.setAttribute('width',size); bg.setAttribute('height',size); bg.setAttribute('fill','#fff'); svg.appendChild(bg);
+      for(let r=0;r<n;r++)for(let c=0;c<n;c++){ if(!qr.isDark(r,c))continue;
+        const m=document.createElementNS(ns,'rect'); m.setAttribute('x',c*cell);m.setAttribute('y',r*cell);
+        m.setAttribute('width',cell);m.setAttribute('height',cell);m.setAttribute('fill','#2A2140'); svg.appendChild(m); }
+      return svg;
+    }
+
+    function guestUrl(){ return EVENT_ID ? location.origin + '/?e=' + EVENT_ID : location.origin; }
+
+    async function load(){
+      if (EVENT_ID) {
+        try {
+          const [meta, ph] = await Promise.all([ api('/events/'+EVENT_ID), api('/events/'+EVENT_ID+'/photos') ]);
+          LIVE = true;
+          if (meta.event.accent) setAccent(meta.event.accent);
+          $('ttl').textContent = (meta.event.title||'The Album').replace(/[!,].*$/, '');
+          $('emptyTtl').textContent = 'Waiting for the first photo at ' + (meta.event.title||'the party') + '… 🎈';
+          $('cGuests').textContent = meta.stats ? meta.stats.guests : 0;
+          return ph.photos;
+        } catch(e){ /* fall to demo */ }
+      }
+      LIVE = false;
+      $('demoTag').classList.remove('hidden');
+      $('ttl').textContent = 'Happy Birthday, Maya';
+      return DEMO.slice().reverse();
+    }
+
+    function renderJoin(){
+      const url = guestUrl();
+      $('joinQr').innerHTML=''; $('joinQr').appendChild(buildQR(url));
+      $('emptyQr').innerHTML=''; $('emptyQr').appendChild(buildQR(url));
+      const disp = url.replace(/^https?:\/\//,'');
+      $('joinUrl').textContent = disp; $('emptyUrl').textContent = disp;
+    }
+
+    function layerSrc(layer, photo){
+      const src = photo.url || photo.thumb;
+      layer.style.backgroundImage = src ? `url("${src}")` : photo.hue;
+      // restart kenburns
+      layer.classList.remove('show'); void layer.offsetWidth; layer.classList.add('show');
+    }
+
+    function showPhoto(i){
+      if (!photos.length) return;
+      idx = (i + photos.length) % photos.length;
+      const p = photos[idx];
+      const next = curLayer === 'layA' ? 'layB' : 'layA';
+      layerSrc($(next), p);
+      $(curLayer).classList.remove('show');
+      curLayer = next;
+      // caption
+      $('caption').style.opacity = 1;
+      $('capAv').textContent = initials(p.uploader); $('capAv').style.background = avColor(p.uploader);
+      $('capNm').textContent = p.uploader || 'Guest';
+      $('capTxt').textContent = p.caption || '';
+    }
+
+    function advance(){ if (photos.length) showPhoto(idx + 1); }
+
+    function notifyNew(n){
+      const t = $('newtoast'); t.textContent = n>1 ? `📸 ${n} new photos!` : '📸 New photo!';
+      t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove('show'), 3000);
+    }
+
+    function applyPhotos(list, isFirst){
+      // server returns newest-first; show oldest-first so the story builds, newest surfaced on arrival
+      const ordered = list.slice().reverse();
+      const newOnes = ordered.filter(p => !seen.has(p.id));
+      ordered.forEach(p => seen.add(p.id));
+      photos = ordered;
+      $('cPhotos').textContent = list.length;
+      if (LIVE) $('cGuests').textContent = new Set(list.map(p=>p.uploader)).size;
+      const hasPhotos = photos.length > 0;
+      $('empty').classList.toggle('hidden', hasPhotos);
+      $('join').style.display = hasPhotos ? 'flex' : 'none';
+      if (!hasPhotos) return;
+      if (isFirst) { showPhoto(0); }
+      else if (newOnes.length) { notifyNew(newOnes.length); showPhoto(photos.indexOf(newOnes[newOnes.length-1])); }
+    }
+
+    async function poll(){
+      try {
+        let list;
+        if (LIVE && EVENT_ID) { const ph = await api('/events/'+EVENT_ID+'/photos'); list = ph.photos; }
+        else list = DEMO.slice().reverse();
+        applyPhotos(list, false);
+      } catch(e){}
+    }
+
+    (async function init(){
+      renderJoin();
+      const list = await load();
+      renderJoin(); // accent may have updated
+      applyPhotos(list, true);
+      setInterval(advance, 5500);       // rotate photos
+      if (LIVE) setInterval(poll, 6000); // pull new uploads
+    })();
+  })();
+  </script>
+</body>
+</html>

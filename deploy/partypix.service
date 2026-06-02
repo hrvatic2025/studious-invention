@@ -1,0 +1,23 @@
+# systemd unit for running PartyPix directly with Node (no Docker).
+# Install:
+#   sudo cp deploy/partypix.service /etc/systemd/system/partypix.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now partypix
+[Unit]
+Description=PartyPix shared photo albums
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/partypix
+ExecStart=/usr/bin/node server/server.js
+Restart=always
+RestartSec=3
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=DATA_DIR=/opt/partypix/data
+EnvironmentFile=-/opt/partypix/.env
+User=partypix
+Group=partypix
+
+[Install]
+WantedBy=multi-user.target

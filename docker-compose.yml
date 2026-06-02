@@ -1,0 +1,26 @@
+services:
+  partypix:
+    build: .
+    image: partypix:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Public URL the QR codes + share links point at. SET THIS in production.
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      NODE_ENV: production
+      PORT: 3000
+      DATA_DIR: /data
+      # --- Optional: use DigitalOcean Spaces instead of local disk ---
+      # STORAGE_DRIVER: spaces
+      # SPACES_ENDPOINT: https://nyc3.digitaloceanspaces.com
+      # SPACES_REGION: nyc3
+      # SPACES_BUCKET: my-partypix-bucket
+      # SPACES_KEY: ${SPACES_KEY}
+      # SPACES_SECRET: ${SPACES_SECRET}
+      # SPACES_CDN_BASE: https://my-partypix-bucket.nyc3.cdn.digitaloceanspaces.com
+    volumes:
+      - partypix-data:/data
+
+volumes:
+  partypix-data:

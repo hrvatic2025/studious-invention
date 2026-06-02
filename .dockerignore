@@ -1,0 +1,16 @@
+node_modules
+data
+*.log
+.env
+.git
+.DS_Store
+screenshots
+Birthday Photo App.html
+QR Code.html
+app
+ios-frame.jsx
+tweaks-panel.jsx
+README.md
+.do
+deploy
+docker-compose.yml

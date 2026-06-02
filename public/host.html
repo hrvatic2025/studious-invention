@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PartyPix — Host Dashboard</title>
+<meta name="theme-color" content="#EC4899" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Baloo+2:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  :root { --accent: #EC4899; --ink: #2A2140; --muted: #6B6480; }
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    background:
+      radial-gradient(900px 600px at 12% -5%, #f3ecff 0%, transparent 55%),
+      radial-gradient(900px 600px at 100% 105%, #ffe9f2 0%, transparent 55%),
+      #ecebf2;
+    min-height: 100vh; color: var(--ink); -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 26px 18px 70px; }
+
+  /* header */
+  .brand { display: flex; align-items: center; gap: 11px; margin-bottom: 22px; }
+  .brand .logo { width: 40px; height: 40px; border-radius: 12px; background: linear-gradient(135deg,#7C3AED,#EC4899); display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(236,72,153,0.35); }
+  .brand .logo svg { display: block; }
+  .brand b { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 21px; }
+  .brand span { color: var(--muted); font-size: 13.5px; font-weight: 600; }
+
+  .card { background: #fff; border-radius: 24px; padding: 26px; box-shadow: 0 16px 44px rgba(42,33,64,0.10); margin-bottom: 18px; position: relative; overflow: hidden; }
+  .card.rainbow::before { content:''; position:absolute; top:0; left:0; right:0; height:7px; background: linear-gradient(90deg,#7C3AED,#EC4899,#FB7185,#F59E0B,#22C55E,#38BDF8); }
+
+  h1 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 30px; margin: 6px 0 4px; line-height: 1.08; }
+  h2 { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 20px; margin: 0 0 14px; }
+  .lead { color: var(--muted); font-size: 15.5px; line-height: 1.5; margin: 0 0 22px; }
+
+  label { display: block; font-size: 12.5px; font-weight: 700; color: #8A839C; text-transform: uppercase; letter-spacing: 1px; margin: 16px 0 7px; }
+  input[type=text], input[type=date], input[type=email], textarea {
+    width: 100%; padding: 13px 15px; border-radius: 13px; font-size: 15.5px;
+    border: 2px solid #E7E2F0; outline: none; color: var(--ink); font-family: inherit; background: #FBFAFE;
+  }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  textarea { resize: none; line-height: 1.45; }
+
+  .swatches { display: flex; gap: 9px; margin-top: 8px; flex-wrap: wrap; }
+  .sw { width: 34px; height: 34px; border-radius: 50%; cursor: pointer; border: 3px solid #fff; box-shadow: 0 0 0 1.5px #e2dcee; transition: transform .12s; }
+  .sw:active { transform: scale(0.9); }
+  .sw.active { box-shadow: 0 0 0 2.5px var(--ink); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-radius: 14px; border: none; cursor: pointer; font-family: 'Baloo 2', sans-serif; font-weight: 700; font-size: 15.5px; background: var(--accent); color: #fff; box-shadow: 0 8px 20px color-mix(in srgb, var(--accent) 40%, transparent); transition: transform .12s, filter .2s; width: 100%; }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: .5; cursor: default; box-shadow: none; }
+  .btn.ghost { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 2px #E7E2F0; }
+  .btn.danger { background: #fff; color: #E11D48; box-shadow: inset 0 0 0 2px #FBD0DC; }
+  .btn.sm { width: auto; padding: 10px 15px; font-size: 14px; }
+  .btn-row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .btn-row .btn { width: auto; flex: 1; min-width: 140px; }
+
+  /* manage */
+  .stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin: 4px 0 0; }
+  .stat { background: #FBFAFE; border-radius: 16px; padding: 15px; text-align: center; }
+  .stat .n { font-family: 'Fredoka', sans-serif; font-size: 28px; color: var(--ink); line-height: 1; }
+  .stat .l { font-size: 12px; color: var(--muted); font-weight: 600; margin-top: 5px; }
+
+  .qrbox { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; }
+  .qr-frame { padding: 16px; border-radius: 20px; background: #FBFAFE; box-shadow: inset 0 0 0 2px #EFEBF7; flex-shrink: 0; }
+  #qr svg, #qr-print svg { display: block; }
+  .qr-side { flex: 1; min-width: 200px; }
+
+  .linkrow { display: flex; gap: 8px; margin-top: 8px; }
+  .linkrow input { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; padding: 5px 11px; border-radius: 20px; background: #F4F0FB; color: var(--accent); }
+
+  .progress { height: 8px; border-radius: 6px; background: #EEE9F6; overflow: hidden; margin-top: 14px; }
+  .progress > div { height: 100%; background: var(--accent); border-radius: 6px; transition: width .4s; }
+  .cap-note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px,1fr)); gap: 8px; margin-top: 6px; }
+  .tile { position: relative; aspect-ratio: 1; border-radius: 13px; overflow: hidden; background: #EEE; box-shadow: 0 3px 8px rgba(0,0,0,.06); }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile .who { position: absolute; left: 0; right: 0; bottom: 0; font-size: 10.5px; color: #fff; font-weight: 700; padding: 10px 7px 4px; background: linear-gradient(transparent, rgba(0,0,0,.6)); }
+  .tile .del { position: absolute; top: 5px; right: 5px; width: 24px; height: 24px; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 14px; line-height: 1; }
+  .empty { text-align: center; color: #B4ADC2; font-size: 14.5px; padding: 30px 10px; line-height: 1.5; }
+
+  .my-events { margin-top: 10px; }
+  .ev-item { display: flex; align-items: center; gap: 12px; padding: 13px 0; border-top: 1px solid #F0ECF7; cursor: pointer; }
+  .ev-item:first-child { border-top: none; }
+  .ev-dot { width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0; }
+  .ev-item .t { font-weight: 700; font-size: 15px; }
+  .ev-item .s { font-size: 12.5px; color: var(--muted); }
+
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 26px; background: var(--ink); color: #fff; padding: 13px 20px; border-radius: 13px; font-weight: 600; font-size: 14px; box-shadow: 0 12px 30px rgba(0,0,0,.3); z-index: 100; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .demo-banner { background: #FFF7ED; color: #9A3412; border: 1.5px solid #FED7AA; border-radius: 13px; padding: 11px 15px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+  .hidden { display: none !important; }
+
+  @media print {
+    body { background: #fff; } .no-print { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="brand no-print">
+      <span class="logo"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 8.5A2.5 2.5 0 016.5 6l.7-1.2A2 2 0 019 3.8h6a2 2 0 011.7 1L17.5 6A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5v-8z" stroke="#fff" stroke-width="1.9"/><circle cx="12" cy="12.5" r="3.2" stroke="#fff" stroke-width="1.9"/></svg></span>
+      <div><b>PartyPix</b> &nbsp;<span>Host Dashboard</span></div>
+    </div>
+
+    <div id="demoBanner" class="demo-banner no-print hidden">Demo mode — no server connected. Create works locally so you can preview the flow. Deploy the backend to make albums real.</div>
+
+    <!-- ============ CREATE VIEW ============ -->
+    <div id="createView" class="hidden">
+      <div class="card rainbow">
+        <h1>Start a photo album 🎉</h1>
+        <p class="lead">Create an album, print the QR code, and let every guest drop their photos into one shared, live gallery. No app to install.</p>
+
+        <label for="fTitle">Whose party? (album title)</label>
+        <input id="fTitle" type="text" placeholder="e.g. Happy Birthday, Maya!" maxlength="80" />
+
+        <label for="fDate">Date (optional)</label>
+        <input id="fDate" type="date" />
+
+        <label>Accent color</label>
+        <div class="swatches" id="createSwatches"></div>
+
+        <label for="fNote">Welcome note for guests (optional)</label>
+        <textarea id="fNote" rows="2" maxlength="240" placeholder="Help us capture the night — add your photos!"></textarea>
+
+        <label for="fEmail">Your email (optional — to find this album later)</label>
+        <input id="fEmail" type="email" placeholder="you@email.com" />
+
+        <div class="btn-row">
+          <button class="btn" id="createBtn">Create album &amp; get QR</button>
+        </div>
+      </div>
+
+      <div class="card" id="myEventsCard">
+        <h2>Your albums</h2>
+        <div class="my-events" id="myEvents"></div>
+      </div>
+    </div>
+
+    <!-- ============ MANAGE VIEW ============ -->
+    <div id="manageView" class="hidden">
+      <div class="card rainbow">
+        <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+          <div>
+            <span class="pill" id="planPill">Free plan</span>
+            <h1 id="mTitle" style="margin-top:10px;">Album</h1>
+            <div class="lead" id="mDate" style="margin:0;"></div>
+          </div>
+        </div>
+
+        <div class="qrbox" style="margin-top:20px;">
+          <div class="qr-frame"><div id="qr"></div></div>
+          <div class="qr-side">
+            <h2 style="margin-bottom:6px;">Scan to join</h2>
+            <p style="color:var(--muted); font-size:14px; margin:0 0 12px; line-height:1.45;">Print this and put it on the table — guests scan with their phone camera.</p>
+            <label style="margin-top:0;">Guest link</label>
+            <div class="linkrow">
+              <input id="guestLink" type="text" readonly />
+              <button class="btn sm" id="copyLink">Copy</button>
+            </div>
+            <div class="btn-row" style="margin-top:12px;">
+              <button class="btn ghost sm" id="printQr">🖨 Print QR card</button>
+              <button class="btn ghost sm" id="dlQr">Download PNG</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Live stats</h2>
+        <div class="stats">
+          <div class="stat"><div class="n" id="stPhotos">0</div><div class="l">Photos</div></div>
+          <div class="stat"><div class="n" id="stGuests">0</div><div class="l">Guests</div></div>
+          <div class="stat"><div class="n" id="stCapPct">0%</div><div class="l">Of capacity</div></div>
+        </div>
+        <div class="progress"><div id="capBar" style="width:0%"></div></div>
+        <div class="cap-note" id="capNote"></div>
+        <div class="btn-row">
+          <button class="btn" id="dlAll">⬇ Download all photos (ZIP)</button>
+          <button class="btn ghost" id="openSlideshow">📺 Slideshow mode</button>
+          <button class="btn ghost" id="openGuest">Open guest view</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Photos <span id="modeHint" style="font-size:12.5px;color:var(--muted);font-weight:600;"></span></h2>
+        <div class="grid" id="photoGrid"></div>
+        <div class="empty hidden" id="photoEmpty">No photos yet. Share the QR to get the party started! 🎈</div>
+      </div>
+
+      <div class="card">
+        <h2>Album settings</h2>
+        <label for="sTitle">Title</label>
+        <input id="sTitle" type="text" maxlength="80" />
+        <label>Accent color</label>
+        <div class="swatches" id="manageSwatches"></div>
+        <label style="display:flex; align-items:center; gap:10px; text-transform:none; letter-spacing:0; font-size:14.5px; color:var(--ink); margin-top:18px; cursor:pointer;">
+          <input id="sDownloads" type="checkbox" style="width:18px;height:18px;accent-color:var(--accent);" /> Let guests download the full album
+        </label>
+        <div class="btn-row">
+          <button class="btn sm" id="saveSettings">Save changes</button>
+          <button class="btn ghost sm" id="backToCreate">← All albums</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- printable QR card (hidden on screen) -->
+  <div id="printCard" class="hidden"></div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="app/host.js"></script>
+</body>
+</html>

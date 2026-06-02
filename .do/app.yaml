@@ -1,0 +1,53 @@
+# DigitalOcean App Platform spec.
+# Deploy with:  doctl apps create --spec .do/app.yaml
+# (or paste into the App Platform UI). Replace the repo + domain values.
+name: partypix
+region: nyc
+services:
+  - name: web
+    dockerfile_path: Dockerfile
+    source_dir: /
+    github:
+      repo: your-github-user/partypix
+      branch: main
+      deploy_on_push: true
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    health_check:
+      http_path: /healthz
+    envs:
+      - key: PUBLIC_URL
+        scope: RUN_TIME
+        value: ${APP_URL}
+      - key: NODE_ENV
+        scope: RUN_TIME
+        value: production
+      # App Platform's local disk is EPHEMERAL — use Spaces for durable storage.
+      - key: STORAGE_DRIVER
+        scope: RUN_TIME
+        value: spaces
+      - key: SPACES_ENDPOINT
+        scope: RUN_TIME
+        value: https://nyc3.digitaloceanspaces.com
+      - key: SPACES_REGION
+        scope: RUN_TIME
+        value: nyc3
+      - key: SPACES_BUCKET
+        scope: RUN_TIME
+        value: your-bucket-name
+      - key: SPACES_CDN_BASE
+        scope: RUN_TIME
+        value: https://your-bucket-name.nyc3.cdn.digitaloceanspaces.com
+      - key: SPACES_KEY
+        scope: RUN_TIME
+        type: SECRET
+        value: PUT_IN_DASHBOARD
+      - key: SPACES_SECRET
+        scope: RUN_TIME
+        type: SECRET
+        value: PUT_IN_DASHBOARD
+
+# NOTE: SQLite lives on the container filesystem. On App Platform that resets on
+# each deploy. For a durable App Platform setup, attach a managed Postgres and
+# swap server/db.js, OR run on a Droplet (see README) where the volume persists.
