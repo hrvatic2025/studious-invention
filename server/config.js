@@ -32,7 +32,7 @@ const config = {
 
   // Limits — these double as the free-tier business guardrails.
   limits: {
-    maxFileBytes: parseInt(process.env.MAX_FILE_BYTES || String(25 * 1024 * 1024), 10), // 25 MB/photo
+    maxFileBytes: parseInt(process.env.MAX_FILE_BYTES || String(60 * 1024 * 1024), 10), // 60 MB/photo (room for full-res originals)
     maxFilesPerRequest: parseInt(process.env.MAX_FILES_PER_REQUEST || '12', 10),
     // Per-event photo cap on the free plan. Hosts upgrading get a higher cap.
     freePlanPhotoCap: parseInt(process.env.FREE_PLAN_PHOTO_CAP || '300', 10),
@@ -41,9 +41,13 @@ const config = {
 
   // Image processing output sizes.
   image: {
-    fullMaxEdge: 2048,   // longest edge of the stored "full" image
+    // Keep guests' originals untouched: the uploaded bytes are stored verbatim as
+    // the "full" photo (no resize, no re-encode), so download = exactly what their
+    // phone shot. Only a lightweight gallery thumbnail is generated on the fly.
+    keepOriginal: (process.env.KEEP_ORIGINAL || 'true') !== 'false',
+    fullMaxEdge: parseInt(process.env.FULL_MAX_EDGE || '4096', 10), // only used as a safety cap when keepOriginal=false
     thumbMaxEdge: 640,   // gallery thumbnail
-    jpegQuality: 82,
+    jpegQuality: 95,     // near-lossless when re-encoding is needed
   },
 
   // Comma-separated allowed CORS origins. Empty = same-origin only.

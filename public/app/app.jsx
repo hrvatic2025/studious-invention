@@ -1,6 +1,8 @@
-// Birthday Photo App — festive mobile photo-sharing prototype
+// PartyPix — festive mobile photo-sharing guest app.
 // Flow: Welcome → Name → Upload → Gallery
-const { useState, useRef, useEffect } = React;
+// Upload UX: each selected photo "develops" from the bottom as its original
+// uploads (real per-file progress), then stamps a checkmark when saved.
+const { useState, useRef, useEffect, useCallback } = React;
 
 // ── Festive confetti palette ──
 const CONFETTI = ['#7C3AED', '#EC4899', '#FB7185', '#F59E0B', '#22C55E', '#38BDF8', '#FACC15'];
@@ -18,17 +20,15 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
   "confetti": true
 }/*EDITMODE-END*/;
 
-// ── Seed photos (placeholders representing other guests' uploads) ──
-const SEED = [
-  { id: 's1', by: 'Priya', caption: 'The cake reveal 🎂', hue: 'linear-gradient(135deg,#FDE68A,#FB923C)', likes: 7, mins: 4 },
-  { id: 's2', by: 'Marcus', caption: 'Squad before the candles', hue: 'linear-gradient(135deg,#C4B5FD,#7C3AED)', likes: 12, mins: 11 },
-  { id: 's3', by: 'Lena', caption: '', hue: 'linear-gradient(135deg,#A7F3D0,#10B981)', likes: 3, mins: 23 },
-  { id: 's4', by: 'Tom', caption: 'Dance floor chaos', hue: 'linear-gradient(135deg,#FBCFE8,#EC4899)', likes: 9, mins: 38 },
-];
+const MAX_PER_BATCH = 12;
+const CONCURRENCY = 3;
 
-// ── Small UID + initials + time helpers ──
+// ── helpers ──
 const uid = () => Math.random().toString(36).slice(2, 9);
-const initials = (n) => (n || '?').trim().slice(0, 1).toUpperCase();
+const initials = (n) => {
+  const t = (n || '?').trim();
+  return (t ? t[0] : '?').toUpperCase(); // [0] is grapheme-safe for Croatian Č/Ć/Š/Ž/Đ
+};
 const relTime = (ts) => {
   if (ts == null) return 'just now';
   const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
@@ -39,27 +39,17 @@ const relTime = (ts) => {
   if (h < 24) return h + 'h ago';
   return Math.floor(h / 24) + 'd ago';
 };
-const avatarColor = (n) => CONFETTI[(n || 'x').charCodeAt(0) % CONFETTI.length];
+const avatarColor = (n) => CONFETTI[((n || 'x').codePointAt(0) || 120) % CONFETTI.length];
+const fmtSize = (b) => b == null ? '' : b > 1e6 ? (b / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1e3)) + ' KB';
 
-// Clone-safe entrance: animate via a mount flag (not a CSS keyframe), so the
-// element's resting style is fully visible — screenshots/PDF capture correctly.
+// Clone-safe entrance: animate via a mount flag so resting style is fully visible.
+// Entrance: the resting (visible) state is the BASE style; a CSS keyframe animates
+// in from hidden. If animations are paused (backgrounded tab) or reduced-motion is
+// on, the base style still shows — content is never stuck invisible.
 function Screen({ children, style }) {
-  const [m, setM] = useState(false);
-  useEffect(() => { const r = requestAnimationFrame(() => requestAnimationFrame(() => setM(true))); return () => cancelAnimationFrame(r); }, []);
-  return (
-    <div style={{
-      height: '100%',
-      opacity: m ? 1 : 0,
-      transform: m ? 'none' : 'translateY(12px) scale(0.99)',
-      transition: 'opacity 0.42s cubic-bezier(0.22,1,0.36,1), transform 0.42s cubic-bezier(0.22,1,0.36,1)',
-      ...style,
-    }}>{children}</div>
-  );
+  return <div className="screen-in" style={{ height: '100%', ...style }}>{children}</div>;
 }
 
-// ─────────────────────────────────────────────
-// Avatar
-// ─────────────────────────────────────────────
 function Avatar({ name, size = 30 }) {
   return (
     <div style={{
@@ -72,17 +62,15 @@ function Avatar({ name, size = 30 }) {
   );
 }
 
-// ─────────────────────────────────────────────
-// Confetti — ambient (gentle) + burst (celebration)
-// ─────────────────────────────────────────────
+// ── Confetti — ambient + burst ──
 function AmbientConfetti({ on }) {
-  if (!on) return null;
   const dots = React.useMemo(() => Array.from({ length: 18 }, (_, i) => ({
     id: i, left: Math.random() * 100, top: Math.random() * 86,
     c: CONFETTI[i % CONFETTI.length], s: 6 + Math.random() * 9,
     rot: Math.random() * 360, round: Math.random() > 0.5,
     dur: 2.6 + Math.random() * 2.4, delay: Math.random() * 2,
   })), []);
+  if (!on) return null;
   return (
     <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0 }}>
       {dots.map(d => (
@@ -129,9 +117,7 @@ function ConfettiBurst({ fire }) {
   );
 }
 
-// ─────────────────────────────────────────────
-// Primary button
-// ─────────────────────────────────────────────
+// ── Primary button ──
 function BigButton({ children, onClick, disabled, color, variant = 'solid' }) {
   const [press, setPress] = useState(false);
   const solid = variant === 'solid';
@@ -143,8 +129,7 @@ function BigButton({ children, onClick, disabled, color, variant = 'solid' }) {
       onPointerLeave={() => setPress(false)}
       style={{
         width: '100%', padding: '17px 20px', borderRadius: 18,
-        fontFamily: "'Baloo 2', sans-serif", fontWeight: 700, fontSize: 18,
-        letterSpacing: 0.2,
+        fontFamily: "'Baloo 2', sans-serif", fontWeight: 700, fontSize: 18, letterSpacing: 0.2,
         color: solid ? '#fff' : color,
         background: solid ? color : '#fff',
         boxShadow: disabled ? 'none'
@@ -159,22 +144,20 @@ function BigButton({ children, onClick, disabled, color, variant = 'solid' }) {
   );
 }
 
-// ─────────────────────────────────────────────
-// Icons (simple, inline)
-// ─────────────────────────────────────────────
+// ── Icons ──
 const Icon = {
   camera: (c) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 8.5A2.5 2.5 0 016.5 6l.7-1.2A2 2 0 019 3.8h6a2 2 0 011.7 1L17.5 6A2.5 2.5 0 0120 8.5v8A2.5 2.5 0 0117.5 19h-11A2.5 2.5 0 014 16.5v-8z" stroke={c} strokeWidth="1.9"/><circle cx="12" cy="12.5" r="3.4" stroke={c} strokeWidth="1.9"/></svg>,
   image: (c) => <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="3.5" y="5" width="17" height="14" rx="3" stroke={c} strokeWidth="1.9"/><circle cx="8.5" cy="10" r="1.6" fill={c}/><path d="M5 17l4.5-4 3 2.5L16 12l3 3.2" stroke={c} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg>,
   plus: (c) => <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke={c} strokeWidth="2.6" strokeLinecap="round"/></svg>,
   heart: (c, fill) => <svg width="20" height="20" viewBox="0 0 24 24" fill={fill ? c : 'none'}><path d="M12 20s-7-4.6-9.2-9C1.3 8 2.7 4.5 6 4.5c2 0 3.2 1.2 4 2.4.8-1.2 2-2.4 4-2.4 3.3 0 4.7 3.5 3.2 6.5C19 15.4 12 20 12 20z" stroke={c} strokeWidth="1.9" strokeLinejoin="round"/></svg>,
-  check: (c) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke={c} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  check: (c, w = 2.6) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7" stroke={c} strokeWidth={w} strokeLinecap="round" strokeLinejoin="round"/></svg>,
   x: (c) => <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke={c} strokeWidth="2.4" strokeLinecap="round"/></svg>,
   back: (c) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke={c} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  retry: (c) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M19 12a7 7 0 1 1-2.05-4.95M19 4v4h-4" stroke={c} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  sparkle: (c) => <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" fill={c}/></svg>,
 };
 
-// ─────────────────────────────────────────────
-// Placeholder "photo" (seeded guest uploads)
-// ─────────────────────────────────────────────
+// ── Placeholder "photo" (seeded guest uploads) ──
 function PhotoFill({ photo, radius = 0 }) {
   const src = photo.thumb || photo.url || photo.src;
   if (src) {
@@ -206,7 +189,6 @@ function WelcomeScreen({ t, onStart, onGallery, hasPhotos, guestCount, photoCoun
     <div style={{ minHeight: '100%', position: 'relative', display: 'flex', flexDirection: 'column' }}>
       <AmbientConfetti on={t.confetti} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 30px', textAlign: 'center', position: 'relative', zIndex: 2 }}>
-        {/* balloon cluster (simple shapes) */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 26, animation: 'bob 3.4s ease-in-out infinite' }}>
           {['#FB7185', '#FACC15', '#7C3AED'].map((c, i) => (
             <div key={i} style={{ position: 'relative', marginTop: i === 1 ? -12 : 0 }}>
@@ -237,7 +219,6 @@ function WelcomeScreen({ t, onStart, onGallery, hasPhotos, guestCount, photoCoun
           )}
         </div>
 
-        {/* social proof */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 26 }}>
           <div style={{ display: 'flex' }}>
             {guests.slice(0, 4).map((g, i) => (
@@ -281,7 +262,8 @@ function NameScreen({ t, value, setValue, onBack, onNext }) {
         </p>
         <input
           ref={inputRef} value={value} onChange={e => setValue(e.target.value)}
-          placeholder="Your name"
+          placeholder="e.g. Đurđa, Šime, Marko…"
+          autoComplete="name" lang="hr" spellCheck={false}
           onKeyDown={e => { if (e.key === 'Enter' && value.trim()) onNext(); }}
           style={{
             width: '100%', padding: '16px 18px', borderRadius: 16, fontSize: 18,
@@ -302,75 +284,192 @@ function NameScreen({ t, value, setValue, onBack, onNext }) {
 }
 
 // ═════════════════════════════════════════════
+// Upload thumbnail — "develops" from the bottom as it uploads
+// ═════════════════════════════════════════════
+function UploadTile({ item, color, onRemove, onRetry }) {
+  const { preview, status } = item;
+  const pct = Math.round((item.progress || 0) * 100);
+  const uploading = status === 'uploading';
+  const done = status === 'done';
+  const error = status === 'error';
+  const ready = status === 'ready' || !status;
+  // height of the still-undeveloped (dark) veil from the top
+  const veil = uploading ? `${(1 - (item.progress || 0)) * 100}%` : '0%';
+
+  return (
+    <div style={{
+      position: 'relative', aspectRatio: '1', borderRadius: 14, overflow: 'hidden',
+      boxShadow: done ? `0 6px 16px ${color}44` : '0 4px 10px rgba(0,0,0,0.08)',
+      animation: 'popIn 0.3s ease both',
+      outline: done ? `2.5px solid ${color}` : 'none', outlineOffset: -2,
+      transition: 'box-shadow 0.3s, outline-color 0.3s',
+    }}>
+      <img src={preview} alt="" style={{
+        width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+        filter: uploading ? 'saturate(0.85)' : 'none',
+        transform: done ? 'scale(1.0)' : 'none',
+      }} />
+
+      {/* "undeveloped" veil — recedes upward as the original transfers */}
+      {uploading && (
+        <React.Fragment>
+          <div style={{
+            position: 'absolute', left: 0, right: 0, top: 0, height: veil,
+            background: 'linear-gradient(180deg, rgba(26,20,40,0.82), rgba(26,20,40,0.62))',
+            backdropFilter: 'grayscale(0.5)', transition: 'height 0.12s linear',
+          }} />
+          {/* developing scan line */}
+          <div style={{
+            position: 'absolute', left: 0, right: 0, top: veil, height: 2,
+            background: color, boxShadow: `0 0 10px 2px ${color}`,
+            transition: 'top 0.12s linear',
+          }} />
+          {/* % readout */}
+          <div style={{
+            position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <span style={{
+              fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 19,
+              color: '#fff', textShadow: '0 1px 6px rgba(0,0,0,0.55)',
+            }}>{pct}%</span>
+          </div>
+        </React.Fragment>
+      )}
+
+      {/* error overlay */}
+      {error && (
+        <button onClick={onRetry} style={{
+          position: 'absolute', inset: 0, background: 'rgba(190,30,55,0.62)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 5,
+          color: '#fff',
+        }}>
+          {Icon.retry('#fff')}
+          <span style={{ fontSize: 11.5, fontWeight: 700, fontFamily: "'Baloo 2', sans-serif" }}>Retry</span>
+        </button>
+      )}
+
+      {/* done — stamped checkmark */}
+      {done && (
+        <div style={{
+          position: 'absolute', bottom: 6, right: 6, width: 26, height: 26, borderRadius: '50%',
+          background: color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 6px rgba(0,0,0,0.25)', animation: 'stampIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both',
+        }}>
+          {Icon.check('#fff', 3)}
+        </div>
+      )}
+
+      {/* remove (only before upload starts) */}
+      {ready && (
+        <button onClick={onRemove}
+          style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {Icon.x('#fff')}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════
 // SCREEN: Upload
 // ═════════════════════════════════════════════
-function UploadScreen({ t, name, pending, setPending, caption, setCaption, uploading, onBack, onSubmit }) {
+function UploadScreen({ t, name, pending, setPending, caption, setCaption, uploading, onBack, onSubmit, onRetryOne }) {
   const camRef = useRef(null);
   const libRef = useRef(null);
   const font = FONT_STACK[t.displayFont];
 
-  const handleFiles = (files) => {
-    const arr = Array.from(files).slice(0, 12);
-    arr.forEach(f => {
-      if (!f.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = ev => setPending(prev => [...prev, { id: uid(), preview: ev.target.result, file: f }]);
-      reader.readAsDataURL(f);
+  const addFiles = (files) => {
+    setPending(prev => {
+      const room = MAX_PER_BATCH - prev.length;
+      const arr = Array.from(files).filter(f => f.type.startsWith('image/')).slice(0, Math.max(0, room));
+      const items = arr.map(f => ({ id: uid(), file: f, preview: URL.createObjectURL(f), status: 'ready', progress: 0 }));
+      return [...prev, ...items];
     });
   };
+
+  const removeOne = (id) => setPending(prev => prev.filter(x => x.id !== id));
+
+  const doneCount = pending.filter(p => p.status === 'done').length;
+  const errCount = pending.filter(p => p.status === 'error').length;
+  const total = pending.length;
+  const overall = total ? pending.reduce((s, p) => s + (p.status === 'done' ? 1 : (p.progress || 0)), 0) / total : 0;
+  const allDone = total > 0 && doneCount === total;
+
+  let btnLabel;
+  if (uploading) btnLabel = `Uploading ${doneCount} of ${total}…`;
+  else if (errCount) btnLabel = `Retry ${errCount} ${errCount === 1 ? 'photo' : 'photos'}`;
+  else if (!total) btnLabel = 'Choose photos first';
+  else btnLabel = `Add ${total} to album`;
 
   return (
     <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', padding: '0 26px' }}>
       <TopBar onBack={onBack} step="Step 2 of 2" color={t.primaryColor} />
-      <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
-      <input ref={libRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={e => handleFiles(e.target.files)} />
+      <input ref={camRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
+      <input ref={libRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
 
       <div style={{ flex: 1, overflow: 'auto', paddingBottom: 10 }} className="app-scroll">
         <h2 style={{ fontFamily: font, fontWeight: 600, fontSize: 28, color: '#2A2140', margin: '4px 0 4px' }}>
           Add your shots
         </h2>
-        <p style={{ fontSize: 15, color: '#6B6480', margin: '0 0 20px' }}>
+        <p style={{ fontSize: 15, color: '#6B6480', margin: '0 0 14px' }}>
           Uploading as <b style={{ color: t.primaryColor }}>{name}</b>
         </p>
 
+        {/* quality reassurance */}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: t.primaryColor + '12', color: t.primaryColor, padding: '7px 12px', borderRadius: 999, marginBottom: 18, fontWeight: 700, fontSize: 12.5, fontFamily: "'Baloo 2', sans-serif" }}>
+          {Icon.sparkle(t.primaryColor)} Full resolution — your originals, untouched
+        </div>
+
         {/* two big sources */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: pending.length ? 18 : 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: pending.length ? 18 : 14, opacity: uploading ? 0.5 : 1, pointerEvents: uploading ? 'none' : 'auto', transition: 'opacity 0.2s' }}>
           <SourceTile color={t.primaryColor} icon={Icon.camera} label="Take a photo" onClick={() => camRef.current.click()} />
           <SourceTile color="#7C3AED" icon={Icon.image} label="From library" onClick={() => libRef.current.click()} />
         </div>
 
-        {/* previews */}
+        {/* previews + per-photo progress */}
         {pending.length > 0 && (
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#9A93AC', textTransform: 'uppercase', letterSpacing: 1, margin: '4px 0 10px' }}>
-              {pending.length} selected
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 10px' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#9A93AC', textTransform: 'uppercase', letterSpacing: 1 }}>
+                {uploading || allDone ? `${doneCount} of ${total} uploaded` : `${total} selected`}
+              </div>
+              {total >= MAX_PER_BATCH && !uploading && (
+                <div style={{ fontSize: 12, color: '#B4ADC2', fontWeight: 600 }}>max {MAX_PER_BATCH}</div>
+              )}
             </div>
+
+            {/* overall progress bar while uploading */}
+            {(uploading || allDone) && (
+              <div style={{ height: 7, borderRadius: 99, background: '#EEEAF6', overflow: 'hidden', marginBottom: 16 }}>
+                <div style={{ height: '100%', width: `${Math.round(overall * 100)}%`, background: t.primaryColor, borderRadius: 99, transition: 'width 0.15s linear' }} />
+              </div>
+            )}
+
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 18 }}>
               {pending.map(p => (
-                <div key={p.id} style={{ position: 'relative', aspectRatio: '1', borderRadius: 14, overflow: 'hidden', boxShadow: '0 4px 10px rgba(0,0,0,0.08)', animation: 'popIn 0.3s ease both' }}>
-                  <img src={p.preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <button onClick={() => setPending(prev => prev.filter(x => x.id !== p.id))}
-                    style={{ position: 'absolute', top: 5, right: 5, width: 24, height: 24, borderRadius: '50%', background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {Icon.x('#fff')}
-                  </button>
-                </div>
+                <UploadTile key={p.id} item={p} color={t.primaryColor}
+                  onRemove={() => removeOne(p.id)} onRetry={() => onRetryOne(p.id)} />
               ))}
             </div>
-            <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Add a caption (optional)…" rows={2}
-              style={{ width: '100%', padding: '13px 15px', borderRadius: 14, fontSize: 15, color: '#2A2140', background: '#F6F3FB', border: '2px solid #E7E2F0', outline: 'none', resize: 'none', lineHeight: 1.4 }} />
+
+            {!uploading && (
+              <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Add a caption (optional)…" rows={2} lang="hr"
+                style={{ width: '100%', padding: '13px 15px', borderRadius: 14, fontSize: 15, color: '#2A2140', background: '#F6F3FB', border: '2px solid #E7E2F0', outline: 'none', resize: 'none', lineHeight: 1.4 }} />
+            )}
           </div>
         )}
 
         {pending.length === 0 && (
           <div style={{ textAlign: 'center', padding: '26px 10px', color: '#B4ADC2', fontSize: 14.5, lineHeight: 1.5 }}>
-            Pick from your camera roll or snap a fresh one.<br />Add up to 12 at once.
+            Pick from your camera roll or snap a fresh one.<br />Add up to {MAX_PER_BATCH} at once.
           </div>
         )}
       </div>
 
       <div style={{ padding: '8px 0 26px' }}>
-        <BigButton color={t.primaryColor} disabled={!pending.length || uploading} onClick={onSubmit}>
-          {uploading ? 'Uploading…' : pending.length ? `Add ${pending.length} to album` : 'Choose photos first'}
+        <BigButton color={t.primaryColor} disabled={!pending.length || uploading || allDone} onClick={onSubmit}>
+          {uploading && <span className="btn-spinner" style={{ borderTopColor: '#fff' }} />}
+          {btnLabel}
         </BigButton>
       </div>
     </div>
@@ -404,7 +503,6 @@ function GalleryScreen({ t, photos, name, onLike, liked, onAddMore, justAdded })
   const guestSet = new Set(photos.map(p => p.uploader));
   return (
     <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column', background: '#FBFAFE' }}>
-      {/* sticky festive header */}
       <div style={{ padding: '6px 22px 14px', position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(#FBFAFE 70%, rgba(251,250,254,0))' }}>
         <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
           <div>
@@ -422,9 +520,8 @@ function GalleryScreen({ t, photos, name, onLike, liked, onAddMore, justAdded })
         </div>
       </div>
 
-      {/* single-column stacked cards */}
       <div className="app-scroll" style={{ flex: 1, overflow: 'auto', padding: '0 18px 120px' }}>
-        {photos.map((p, i) => {
+        {photos.map((p) => {
           const isMine = p.uploader === name;
           const isNew = justAdded.includes(p.id);
           return (
@@ -464,7 +561,6 @@ function GalleryScreen({ t, photos, name, onLike, liked, onAddMore, justAdded })
         </div>
       </div>
 
-      {/* FAB */}
       <button onClick={onAddMore} style={{
         position: 'absolute', bottom: 30, right: 22, width: 60, height: 60, borderRadius: '50%',
         background: t.primaryColor, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -477,7 +573,6 @@ function GalleryScreen({ t, photos, name, onLike, liked, onAddMore, justAdded })
   );
 }
 
-// ── Shared top bar (back + step pill) ──
 function TopBar({ onBack, step, color }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 8 }}>
@@ -502,52 +597,91 @@ function App() {
   const [liked, setLiked] = useState({});
   const [burst, setBurst] = useState(0);
   const [justAdded, setJustAdded] = useState([]);
-  const [loaded, setLoaded] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [toast, setToast] = useState(null);
   const [live, setLive] = useState(false);
 
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3200); };
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
 
-  // Load the album (live backend, or demo fallback) once on mount.
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3200); };
+  const patchItem = useCallback((id, patch) => {
+    setPending(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+  }, []);
+
   useEffect(() => {
     let alive = true;
     window.PartyPix.load().then(({ event, photos, live }) => {
       if (!alive) return;
       setPhotos(photos);
       setLive(live);
-      // A real album's title + accent override the demo defaults.
       if (live && event) {
         if (event.title) setTweak('eventTitle', event.title);
         if (event.accent) setTweak('primaryColor', event.accent);
       }
-      setLoaded(true);
-    }).catch(() => setLoaded(true));
+    }).catch(() => {});
     return () => { alive = false; };
   }, []);
 
   const guestNames = [...new Set(photos.map(p => p.uploader))];
   const guestCount = guestNames.length;
 
-  const submitUpload = async () => {
-    if (!pending.length || uploading) return;
-    setUploading(true);
+  // Upload a single pending item, wiring its progress + final state.
+  const uploadItem = useCallback(async (item) => {
+    patchItem(item.id, { status: 'uploading', progress: 0 });
     try {
-      const files = pending.map(p => p.file).filter(Boolean);
-      const saved = await window.PartyPix.upload(files, name || 'Guest', caption);
-      // demo path returns objects already; live returns server objects
-      const ids = saved.map(p => p.id);
-      setPhotos(prev => [...saved, ...prev.filter(x => !ids.includes(x.id))]);
-      setJustAdded(ids);
-      setPending([]); setCaption('');
-      setBurst(b => b + 1);
-      setScreen('gallery');
+      const saved = await window.PartyPix.uploadOne(
+        item.file, name || 'Guest', caption,
+        (frac) => patchItem(item.id, { progress: frac })
+      );
+      patchItem(item.id, { status: 'done', progress: 1, savedId: saved.id });
+      setPhotos(prev => prev.some(x => x.id === saved.id) ? prev : [saved, ...prev]);
+      setJustAdded(prev => [...prev, saved.id]);
+      return true;
     } catch (e) {
+      patchItem(item.id, { status: 'error' });
       if (e.code === 'CAP_REACHED') showToast('This album is full 🎈 Ask the host to upgrade.');
-      else showToast(e.message || 'Upload failed — try again');
-    } finally {
-      setUploading(false);
+      return false;
     }
+  }, [name, caption, patchItem]);
+
+  // Run a queue with limited concurrency.
+  const runQueue = useCallback(async (items) => {
+    if (!items.length) return;
+    setUploading(true);
+    setJustAdded([]);
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < items.length) {
+        const it = items[cursor++];
+        await uploadItem(it);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, items.length) }, worker));
+    setUploading(false);
+
+    // settle: did everything succeed?
+    const latest = pendingRef.current;
+    const anyErr = latest.some(p => p.status === 'error');
+    if (!anyErr) {
+      setBurst(b => b + 1);
+      setCaption('');
+      setTimeout(() => { setPending([]); setScreen('gallery'); }, 650);
+    } else {
+      const ok = latest.filter(p => p.status === 'done').length;
+      if (ok) showToast(`${ok} uploaded · tap a dimmed photo to retry`);
+      else showToast('Upload failed — tap a photo to retry');
+    }
+  }, [uploadItem]);
+
+  const submitUpload = () => {
+    if (uploading) return;
+    const queue = pending.filter(p => p.status === 'ready' || p.status === 'error');
+    runQueue(queue);
+  };
+  const retryOne = (id) => {
+    const it = pendingRef.current.find(p => p.id === id);
+    if (it && !uploading) runQueue([it]);
   };
 
   const toggleLike = (id) => {
@@ -558,13 +692,12 @@ function App() {
 
   const saveName = (v) => { setName(v); try { localStorage.setItem('pp_name', v); } catch (_) {} };
 
-  // Near-live gallery: poll for new photos while viewing the album (live mode only).
+  // Near-live gallery polling (live mode only).
   useEffect(() => {
     if (screen !== 'gallery' || !live) return;
     const iv = setInterval(() => {
       window.PartyPix.listPhotos()
         .then(fresh => setPhotos(prev => {
-          // keep optimistic ordering; replace with server truth
           if (fresh.length === prev.length && fresh[0] && prev[0] && fresh[0].id === prev[0].id) return prev;
           return fresh;
         }))
@@ -577,30 +710,28 @@ function App() {
     <div style={{ position: 'relative' }}>
       <div className="phone-shell">
         <div style={{ position: 'relative', height: '100%', display: 'flex', flexDirection: 'column', background: screen === 'gallery' ? '#FBFAFE' : '#FFFDFB' }}>
-          {/* safe-area inset for the notch / browser chrome */}
           <div style={{ height: 'max(env(safe-area-inset-top, 0px), 16px)', flex: '0 0 auto' }} />
           <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
             <Screen key={screen} style={{ height: '100%' }}>
-            {screen === 'welcome' && (
-              <WelcomeScreen t={t} guests={guestNames} guestCount={guestCount} photoCount={photos.length}
-                onStart={() => setScreen(name ? 'upload' : 'name')} onGallery={() => setScreen('gallery')}
-                hasPhotos={photos.length > 0} />
-            )}
-            {screen === 'name' && (
-              <NameScreen t={t} value={name} setValue={saveName}
-                onBack={() => setScreen('welcome')} onNext={() => setScreen('upload')} />
-            )}
-            {screen === 'upload' && (
-              <UploadScreen t={t} name={name || 'Guest'} pending={pending} setPending={setPending}
-                caption={caption} setCaption={setCaption} uploading={uploading}
-                onBack={() => setScreen(photos.some(p => p.uploader === name) ? 'gallery' : 'name')}
-                onSubmit={submitUpload} />
-            )}
-            {screen === 'gallery' && (
-              <GalleryScreen t={t} photos={photos} name={name} liked={liked} justAdded={justAdded}
-                onLike={toggleLike}
-                onAddMore={() => setScreen('upload')} />
-            )}
+              {screen === 'welcome' && (
+                <WelcomeScreen t={t} guests={guestNames} guestCount={guestCount} photoCount={photos.length}
+                  onStart={() => setScreen(name ? 'upload' : 'name')} onGallery={() => setScreen('gallery')}
+                  hasPhotos={photos.length > 0} />
+              )}
+              {screen === 'name' && (
+                <NameScreen t={t} value={name} setValue={saveName}
+                  onBack={() => setScreen('welcome')} onNext={() => setScreen('upload')} />
+              )}
+              {screen === 'upload' && (
+                <UploadScreen t={t} name={name || 'Guest'} pending={pending} setPending={setPending}
+                  caption={caption} setCaption={setCaption} uploading={uploading}
+                  onBack={() => { if (!uploading) setScreen(photos.some(p => p.uploader === name) ? 'gallery' : 'name'); }}
+                  onSubmit={submitUpload} onRetryOne={retryOne} />
+              )}
+              {screen === 'gallery' && (
+                <GalleryScreen t={t} photos={photos} name={name} liked={liked} justAdded={justAdded}
+                  onLike={toggleLike} onAddMore={() => setScreen('upload')} />
+              )}
             </Screen>
           </div>
           {toast && (

@@ -139,21 +139,36 @@ app.post('/api/events/:id/photos', uploadLimiter, upload.array('photos', config.
   const files = req.files.slice(0, allowed);
   const saved = [];
 
+  // map common image mimetypes → stored extension
+  const EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic', 'image/heif': 'heif', 'image/gif': 'gif' };
+
   for (const f of files) {
     try {
-      const img = sharp(f.buffer, { failOn: 'none' }).rotate(); // honor EXIF orientation
-      const meta = await img.metadata();
-      const full = await img.clone()
-        .resize({ width: config.image.fullMaxEdge, height: config.image.fullMaxEdge, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: config.image.jpegQuality, mozjpeg: true }).toBuffer();
+      const meta = await sharp(f.buffer, { failOn: 'none' }).metadata();
+
+      let full, fullExt, fullType;
+      if (config.image.keepOriginal) {
+        // Store the guest's original bytes verbatim — no resize, no re-encode.
+        full = f.buffer;
+        fullType = f.mimetype || 'application/octet-stream';
+        fullExt = EXT[fullType] || (f.originalname && f.originalname.split('.').pop().toLowerCase()) || 'jpg';
+      } else {
+        // Fallback: high-quality JPEG capped to a max edge.
+        full = await sharp(f.buffer, { failOn: 'none' }).rotate()
+          .resize({ width: config.image.fullMaxEdge, height: config.image.fullMaxEdge, fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: config.image.jpegQuality, mozjpeg: true }).toBuffer();
+        fullType = 'image/jpeg'; fullExt = 'jpg';
+      }
+
+      // Always make a small, fast gallery thumbnail (originals can be huge).
       const thumb = await sharp(f.buffer, { failOn: 'none' }).rotate()
         .resize({ width: config.image.thumbMaxEdge, height: config.image.thumbMaxEdge, fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 72, mozjpeg: true }).toBuffer();
+        .jpeg({ quality: 78, mozjpeg: true }).toBuffer();
 
       const id = photoId();
-      const fullKey = `${ev.id}/${id}.jpg`;
+      const fullKey = `${ev.id}/${id}.${fullExt}`;
       const thumbKey = `${ev.id}/${id}_t.jpg`;
-      await storage.put(fullKey, full, 'image/jpeg');
+      await storage.put(fullKey, full, fullType);
       await storage.put(thumbKey, thumb, 'image/jpeg');
 
       const row = {

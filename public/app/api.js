@@ -2,6 +2,10 @@
 // Talks to the real backend when an album is present (?e=<id>) and the API
 // responds. Otherwise runs a self-contained DEMO so the page is fully usable
 // offline / in preview. window.PartyPix is the single entry point.
+//
+// Upload model: photos are sent ONE FILE PER REQUEST so each thumbnail gets its
+// own live progress (XMLHttpRequest.upload.onprogress). The original File is sent
+// untouched — no client-side downscaling — so the server keeps full quality.
 (function () {
   const params = new URLSearchParams(location.search);
   const EVENT_ID = params.get('e');
@@ -25,19 +29,43 @@
   }
 
   // ---------------- DEMO backend (in-memory) ----------------
+  // Note: seed names include Croatian diacritics (Đ, š, ž, ć) to prove glyph rendering.
   const DEMO = {
     event: {
       id: 'demo', title: 'Happy Birthday, Maya!', eventDate: null,
       accent: '#EC4899', welcomeNote: null, allowDownloads: true, plan: 'free',
     },
     photos: [
-      { id: 's1', uploader: 'Priya',  caption: 'The cake reveal 🎂',     thumb: null, url: null, hue: 'linear-gradient(135deg,#FDE68A,#FB923C)', likes: 7,  createdAt: Date.now() - 4*60000 },
-      { id: 's2', uploader: 'Marcus', caption: 'Squad before the candles', thumb: null, url: null, hue: 'linear-gradient(135deg,#C4B5FD,#7C3AED)', likes: 12, createdAt: Date.now() - 11*60000 },
-      { id: 's3', uploader: 'Lena',   caption: '',                         thumb: null, url: null, hue: 'linear-gradient(135deg,#A7F3D0,#10B981)', likes: 3,  createdAt: Date.now() - 23*60000 },
-      { id: 's4', uploader: 'Tom',    caption: 'Dance floor chaos',        thumb: null, url: null, hue: 'linear-gradient(135deg,#FBCFE8,#EC4899)', likes: 9,  createdAt: Date.now() - 38*60000 },
+      { id: 's1', uploader: 'Đurđa',  caption: 'Rezanje torte 🎂',          thumb: null, url: null, hue: 'linear-gradient(135deg,#FDE68A,#FB923C)', likes: 7,  createdAt: Date.now() - 4*60000 },
+      { id: 's2', uploader: 'Marko',  caption: 'Ekipa prije svjećica',       thumb: null, url: null, hue: 'linear-gradient(135deg,#C4B5FD,#7C3AED)', likes: 12, createdAt: Date.now() - 11*60000 },
+      { id: 's3', uploader: 'Šime',   caption: '',                           thumb: null, url: null, hue: 'linear-gradient(135deg,#A7F3D0,#10B981)', likes: 3,  createdAt: Date.now() - 23*60000 },
+      { id: 's4', uploader: 'Žaklina',caption: 'Ludnica na podiju',          thumb: null, url: null, hue: 'linear-gradient(135deg,#FBCFE8,#EC4899)', likes: 9,  createdAt: Date.now() - 38*60000 },
     ],
   };
   const uid = () => Math.random().toString(36).slice(2, 10);
+
+  // Simulate a realistic network ramp for demo mode, scaled to file size so big
+  // photos visibly take longer. Driven by a timer (not rAF) so it still completes
+  // when the tab/iframe is backgrounded. Calls onProgress(frac 0..1).
+  function simulateUpload(file, onProgress) {
+    return new Promise((resolve) => {
+      const bytes = (file && file.size) || 1_500_000;
+      // ~1.6 MB/s "connection" + a floor so tiny files still animate.
+      const dur = Math.min(6000, Math.max(900, (bytes / 1_600_000) * 1000));
+      const start = Date.now();
+      const id = setInterval(() => {
+        const lin = Math.min(1, (Date.now() - start) / dur);
+        const eased = 1 - Math.pow(1 - lin, 2.2); // ease-out: sprint then settle
+        if (lin < 1) {
+          onProgress && onProgress(Math.min(0.98, eased)); // hold at 98% until "saved"
+        } else {
+          clearInterval(id);
+          onProgress && onProgress(1);
+          setTimeout(resolve, 90);
+        }
+      }, 60);
+    });
+  }
 
   const PartyPix = {
     eventId: EVENT_ID,
@@ -56,7 +84,6 @@
           LIVE = true;
           return { live: true, event: meta.event, stats: meta.stats, photos: ph.photos };
         } catch (e) {
-          // fall through to demo if the album genuinely doesn't exist or API down
           console.warn('[PartyPix] live load failed, using demo:', e.message);
         }
       }
@@ -68,31 +95,50 @@
       };
     },
 
-    // Upload File objects. onItem(photo) fires per saved photo. Returns array.
-    async upload(files, uploader, caption, onProgress) {
+    // Upload a SINGLE original file. onProgress(frac 0..1) fires continuously.
+    // Resolves with the saved photo object. Throws on failure (err.code may be set).
+    uploadOne(file, uploader, caption, onProgress) {
       if (LIVE) {
-        const fd = new FormData();
-        fd.append('uploader', uploader || 'Guest');
-        if (caption) fd.append('caption', caption);
-        for (const f of files) fd.append('photos', f);
-        const res = await fetch('/api/events/' + EVENT_ID + '/photos', { method: 'POST', body: fd });
-        if (!res.ok) {
-          const b = await res.json().catch(() => ({}));
-          const err = new Error(b.error || 'Upload failed'); err.code = b.code; throw err;
-        }
-        const data = await res.json();
-        return data.photos;
+        return new Promise((resolve, reject) => {
+          const fd = new FormData();
+          fd.append('uploader', uploader || 'Guest');
+          if (caption) fd.append('caption', caption);
+          fd.append('photos', file); // original bytes, untouched
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/events/' + EVENT_ID + '/photos');
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && onProgress) onProgress(Math.min(0.98, e.loaded / e.total));
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const data = JSON.parse(xhr.responseText);
+                onProgress && onProgress(1);
+                resolve((data.photos && data.photos[0]) || data.photo);
+              } catch (_) { reject(new Error('Bad server response')); }
+            } else {
+              let code, msg;
+              try { const b = JSON.parse(xhr.responseText); code = b.code; msg = b.error; } catch (_) {}
+              const err = new Error(msg || 'Upload failed'); err.code = code; reject(err);
+            }
+          };
+          xhr.onerror = () => reject(new Error('Network error — check your connection'));
+          xhr.ontimeout = () => reject(new Error('Upload timed out'));
+          xhr.send(fd);
+        });
       }
-      // demo: read files locally as data URLs
-      const out = [];
-      for (const f of files) {
-        const url = await new Promise(r => { const fr = new FileReader(); fr.onload = e => r(e.target.result); fr.readAsDataURL(f); });
-        const p = { id: uid(), uploader: uploader || 'Guest', caption: caption || '', url, thumb: url, likes: 0, createdAt: Date.now() };
-        DEMO.photos.unshift(p);
-        out.push(p);
-        if (onProgress) onProgress(out.length, files.length);
-      }
-      return out;
+      // demo: keep the full-resolution data URL locally + simulate transfer
+      return new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onerror = () => reject(new Error("Couldn't read that file"));
+        fr.onload = async (e) => {
+          await simulateUpload(file, onProgress);
+          const p = { id: uid(), uploader: uploader || 'Guest', caption: caption || '', url: e.target.result, thumb: e.target.result, likes: 0, createdAt: Date.now() };
+          DEMO.photos.unshift(p);
+          resolve(p);
+        };
+        fr.readAsDataURL(file);
+      });
     },
 
     async like(photoId, unlike) {
